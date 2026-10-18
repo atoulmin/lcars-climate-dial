@@ -45,10 +45,9 @@ Right: the firmware running in the simulator.</sub></p>
 
 - **Open Nextion ONX2424G013**: ESP32-S3 (16 MB flash, 8 MB PSRAM), 1.28" 240×240 GC9A01
   round screen, rotary encoder with push button, USB-C.
-- **Mounting:** the Australian-size wall plate from
-  [Nextion Desk Clock](https://github.com/atoulmin/nextion-desk-clock#3d-printed-mounts) fits.
-  The desk stand from that repo holds the knob a quarter turn round, and this firmware doesn't
-  have a rotation setting yet.
+- **Mounting:** a 3D-printable Australian-size [wall plate](#wall-plate) is included.
+  The desk stand from [Nextion Desk Clock](https://github.com/atoulmin/nextion-desk-clock#desk-stand)
+  holds the knob a quarter turn round, and this firmware doesn't have a rotation setting yet.
 
 ## Setup
 
@@ -106,6 +105,26 @@ typos, then press Enter again.
   <img src="docs/images/setup-not-found.png" width="170" alt="Climate entity not found">
 </p>
 
+## Wall plate
+
+<img src="enclosures/wall-plate/preview.png" width="600" alt="Wall plate renders, front and back">
+
+A standard Australian switch plate (73 × 115 × 4 mm) that holds the dial on a wall:
+[`enclosures/wall-plate/onx2424g013_au_wallplate.stl`](enclosures/wall-plate/onx2424g013_au_wallplate.stl).
+
+- **How it fits:** the knob's rear housing sits in a cup through the plate, with the turning
+  ring 1 mm proud of the face so it turns freely. The cup reaches 8.4 mm into the wall.
+- **Fixing the knob:** use 3 × M1.6 screws, about 6 mm long, put in from the back into the
+  knob's own nuts.
+- **Fixing the plate:** use 2 × M3.5 plate screws at the standard 84 mm centres, so it fits
+  Australian wall boxes and mounting brackets.
+- **Power:** a USB-C cable runs straight out of the back of the knob into the wall cavity,
+  so you'll need USB power behind the plate. Very chunky plugs may be tight against the screw
+  post beside the socket.
+- **Printing:** print it face down, with no supports.
+- **Changing it:** every dimension is a setting at the top of `make_plate.py`. To regenerate the STL, run
+  `pip install -r enclosures/requirements.txt`, then `python make_plate.py` in that folder.
+
 ## Settings in Home Assistant
 
 <img src="docs/images/home-assistant-settings.png" width="300" align="right" alt="The dial's settings in Home Assistant">
@@ -148,6 +167,7 @@ and `LCARS_SETUP_DEMO=1` steps through the setup screens.
 | `firmware/lcars_climate.h` | The LCARS display, drawn in LVGL |
 | `firmware/lcars_setup.h` | The setup screens |
 | `firmware/sim.yaml` | Desktop simulator |
+| `enclosures/wall-plate/` | Wall plate STL and the Python script that generates it |
 
 ## Trademarks
 
