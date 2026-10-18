@@ -54,7 +54,7 @@ esphome:
   build_path: build/lcars-climate-dial
   project:
     name: atoulmin.lcars-climate-dial
-    version: "1.0.0"
+    version: "1.0.1"
 
 # No key: Home Assistant generates one and installs it when the dial is added
 api:

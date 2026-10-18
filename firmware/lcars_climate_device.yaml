@@ -39,6 +39,13 @@ esphome:
           api->subscribe_home_assistant_state(e, std::string("current_temperature"), Cb([](const std::string &s) {
             id(ha_cur_temp)->execute(parse_number<float>(s).value_or(NAN));
           }));
+          // What the climate supports, so a press only asks for modes it has
+          api->subscribe_home_assistant_state(e, std::string("hvac_modes"), Cb([](const std::string &s) {
+            id(hvac_modes) = s;
+          }));
+          api->subscribe_home_assistant_state(e, std::string("supported_features"), Cb([](const std::string &s) {
+            id(climate_features) = parse_number<int>(s).value_or(-1);
+          }));
           if (${temp_range_from_ha}) {
             api->subscribe_home_assistant_state(e, std::string("min_temp"), Cb([](const std::string &s) {
               if (auto t = parse_number<float>(s)) if (*t < id(temp_max)) id(temp_min) = *t;
@@ -88,6 +95,16 @@ globals:
   - id: linked_since
     type: uint32_t
     initial_value: "0"
+  # The climate's hvac_modes attribute as Home Assistant sends it ("['off', 'heat', ...]")
+  # and its supported_features (-1 = not known yet)
+  - id: hvac_modes
+    type: std::string
+  - id: climate_features
+    type: int
+    initial_value: "-1"
+  # Mode the next power-on asks for ("" = climate.turn_on)
+  - id: power_mode
+    type: std::string
 
 text:
   - platform: template
@@ -265,11 +282,38 @@ script:
                 data:
                   entity_id: !lambda return id(subscribed_entity);
           else:
+            # Pick a mode the climate actually has: the chosen one, else Auto <-> Heat/Cool,
+            # else the last mode it was on, else the first one it lists. "Last used" asks
+            # the climate to turn itself on if it supports that.
+            - lambda: |-
+                const std::string &modes = id(hvac_modes);
+                auto has = [&](const std::string &m) {
+                  return !m.empty() && (modes.empty() || modes.find("'" + m + "'") != std::string::npos);
+                };
+                const int TURN_ON = 256;
+                std::string want = id(on_mode), pick;
+                if (want.empty() && id(climate_features) >= 0 && (id(climate_features) & TURN_ON)) {
+                  pick = "";
+                } else {
+                  if (want.empty()) want = id(last_on_mode);
+                  if (has(want)) pick = want;
+                  else if (want == "auto" && has("heat_cool")) pick = "heat_cool";
+                  else if (want == "heat_cool" && has("auto")) pick = "auto";
+                  else if (has(id(last_on_mode))) pick = id(last_on_mode);
+                  else {
+                    pick = want;
+                    for (const char *m : {"heat_cool", "auto", "cool", "heat", "dry", "fan_only"})
+                      if (has(m)) { pick = m; break; }
+                  }
+                }
+                id(power_mode) = pick;
+                if (!pick.empty()) id(hvac_mode) = pick;
+                ESP_LOGI("lcars", "Turning on %s in mode '%s' (wanted '%s', supports %s)", id(subscribed_entity).c_str(),
+                         pick.empty() ? "(turn_on)" : pick.c_str(), id(on_mode).c_str(), modes.c_str());
             - if:
                 condition:
-                  lambda: return id(on_mode).empty();
+                  lambda: return id(power_mode).empty();
                 then:
-                  # "Last used": let the climate pick its own last mode
                   - homeassistant.action:
                       action: climate.turn_on
                       data:
@@ -279,7 +323,7 @@ script:
                       action: climate.set_hvac_mode
                       data:
                         entity_id: !lambda return id(subscribed_entity);
-                        hvac_mode: !lambda return id(on_mode);
+                        hvac_mode: !lambda return id(power_mode);
 
   - id: set_backlight
     parameters:

@@ -52,6 +52,15 @@ globals:
   - id: last_on_mode
     type: std::string
     initial_value: '"heat_cool"'
+  # Latest state from Home Assistant, applied once a local change has had time to land
+  - id: ha_last_mode
+    type: std::string
+  - id: ha_last_set
+    type: float
+    initial_value: "NAN"
+  - id: resync_pending
+    type: bool
+    initial_value: "false"
 
 # LCARS GTJ3 (freeware from gtjlcars.de; keep the file unmodified, not for sale)
 font:
@@ -164,6 +173,7 @@ script:
                 if (id(set_temp) > id(temp_max)) id(set_temp) = id(temp_max);
                 id(last_turn_ms) = now;
                 id(local_change_ms) = now;
+                id(resync_pending) = true;
                 id(pending_send) = true;
             - script.execute: wake_screen
 
@@ -181,6 +191,7 @@ script:
           id(ac_on) = !id(ac_on);
           id(hvac_mode) = id(ac_on) ? (id(on_mode).empty() ? id(last_on_mode) : id(on_mode)) : "off";
           id(local_change_ms) = millis();
+          id(resync_pending) = true;
           lcars_ac::flash();
       - script.execute: send_power
       - if:
@@ -191,13 +202,15 @@ script:
           else:
             - script.execute: sleep_now
 
-  # Home Assistant state. Ignored briefly after a local change so the dial doesn't
-  # jump back while the air con catches up.
+  # Home Assistant state. Held back briefly after a local change so the dial doesn't
+  # jump back while the climate catches up, then applied (resync_pending) so a command
+  # that failed doesn't leave the dial showing the wrong thing.
   - id: ha_mode
     parameters:
       mode: std::string
     then:
       - lambda: |-
+          id(ha_last_mode) = mode;
           if (millis() - id(local_change_ms) < 4000) return;
           id(hvac_mode) = mode;
           id(ac_on) = mode != "off" && mode != "unavailable" && mode != "unknown";
@@ -207,7 +220,9 @@ script:
       t: float
     then:
       - lambda: |-
-          if (std::isnan(t) || millis() - id(local_change_ms) < 4000) return;
+          if (std::isnan(t)) return;
+          id(ha_last_set) = t;
+          if (millis() - id(local_change_ms) < 4000) return;
           id(set_temp) = t;
   - id: ha_cur_temp
     parameters:
@@ -256,6 +271,19 @@ interval:
           if (id(pending_send) && millis() - id(last_turn_ms) > ${send_after_ms}) {
             id(pending_send) = false;
             id(send_temperature).execute();
+          }
+          // The hold after a local change is over: show Home Assistant's real state again
+          // (it only sends changes, so a failed command would otherwise never correct)
+          if (id(resync_pending) && !id(pending_send) && millis() - id(local_change_ms) >= 4000) {
+            id(resync_pending) = false;
+            const std::string &m = id(ha_last_mode);
+            if (!m.empty()) {
+              bool on = m != "off" && m != "unavailable" && m != "unknown";
+              id(hvac_mode) = m;
+              id(ac_on) = on;
+              if (on) id(last_on_mode) = m;
+            }
+            if (!std::isnan(id(ha_last_set))) id(set_temp) = id(ha_last_set);
           }
           lcars_ac::Input in;
           in.set_temp = id(set_temp);
