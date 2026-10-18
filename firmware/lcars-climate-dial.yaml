@@ -1,6 +1,6 @@
 # LCARS Climate Dial: an LCARS-style thermostat dial for Home Assistant on the
 # Open Nextion ONX2424G013 round knob. Turn = set temperature (clockwise warmer),
-# press = on / off, hold = fan speed. No Wi-Fi, keys or climate device are built in.
+# press = on / off, press and hold = fan speed. No Wi-Fi, keys or climate device are built in.
 #
 # Unofficial fan project for personal, non-commercial use only. LCARS, Star Trek and
 # related marks are the property of Paramount Global / CBS Studios; this project is not
@@ -43,7 +43,7 @@ substitutions:
   on_mode: ""
   send_after_ms: "700"
   screen_idle_after: 45s
-  # Fan speed page (hold the knob) closes after this long untouched
+  # Fan speed page (press and hold the knob) closes after this long untouched
   fan_close_after: 5s
   sleep_brightness: "0.3"
   setup_ssid: LCARS Dial Setup

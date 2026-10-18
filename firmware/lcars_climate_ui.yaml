@@ -282,7 +282,7 @@ script:
     then:
       - lambda: id(cur_temp) = t;
 
-  # Long press: open the fan speed page, only while the climate is running and has fan modes
+  # Press and hold: open the fan speed page, only while the climate is running and has fan modes
   - id: fan_open
     then:
       - if:

@@ -1,4 +1,4 @@
-# Desktop preview of the LCARS air con dial (SDL window). Up/Down = knob, Space = press, F = hold (fan speed).
+# Desktop preview of the LCARS air con dial (SDL window). Up/Down = knob, Space = press, F = press and hold (fan speed).
 substitutions:
   # LCARS-style font: a TTF file or gfonts://Family@weight
   lcars_font: "gfonts://Antonio@700"
@@ -16,7 +16,7 @@ substitutions:
   temp_step: "0.5"
   send_after_ms: "700"
   screen_idle_after: 3s
-  # Fan speed page (hold the knob) closes after this long untouched
+  # Fan speed page (press and hold the knob) closes after this long untouched
   fan_close_after: 5s
   sleep_brightness: "0.3"
 

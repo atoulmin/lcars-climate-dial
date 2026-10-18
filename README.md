@@ -2,7 +2,7 @@
 
 An LCARS-style thermostat dial for Home Assistant, running ESPHome on the **Open Nextion
 ONX2424G013** round knob display. Turn the knob to set the temperature, press it to switch your
-heating or cooling on and off, and hold it to change the fan speed. It works with any Home
+heating or cooling on and off, and press and hold it to change the fan speed. It works with any Home
 Assistant `climate` entity.
 
 > [!IMPORTANT]
@@ -35,7 +35,7 @@ Right: the firmware running in the simulator.</sub></p>
   knob has been still for 0.7 s, so your air con gets one command instead of a beep per click.
   Spin it fast to move in bigger steps.
 - **Press** to turn the climate device on or off.
-- **Hold** the knob for half a second while it's running to open **FAN SPEED**. A segmented
+- **Press and hold** the knob for half a second while it's running to open **FAN SPEED**. A segmented
   LCARS bar shows the climate's own fan speeds (for example auto, low, medium, high). Turn
   to step through them; the new speed is sent once you stop turning. A press, or 5 seconds
   untouched, returns to the main screen.
@@ -165,7 +165,7 @@ The settings at the top of `firmware/lcars-climate-dial.yaml`:
 | `setup_ssid` | `LCARS Dial Setup` | Name of the setup hotspot |
 
 **Simulator:** `firmware/sim.yaml` runs the dial in a window on your computer
-(`esphome run sim.yaml`). ↑/↓ turns the knob, Space presses it and F holds it (fan speed).
+(`esphome run sim.yaml`). ↑/↓ turns the knob, Space presses it and F presses and holds it (fan speed).
 `LCARS_DEMO=1` plays a demo, `LCARS_SETUP_DEMO=1` steps through the setup screens and
 `LCARS_FAN_DEMO=1` shows the fan speed page.
 

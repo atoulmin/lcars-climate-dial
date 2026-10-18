@@ -254,7 +254,7 @@ sensor:
       - script.execute: { id: knob_step, direction: -1 }
 
 binary_sensor:
-  # Knob push button: a tap (acted on at release) is on/off, holding it opens fan speed
+  # Knob push button: a tap (acted on at release) is on/off, a press and hold opens fan speed
   - platform: gpio
     id: knob_button
     pin:
