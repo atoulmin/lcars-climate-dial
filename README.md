@@ -116,6 +116,10 @@ A standard Australian switch plate (73 × 115 × 4 mm) that holds the dial on a 
   ring 1 mm proud of the face so it turns freely. The cup reaches 8.4 mm into the wall.
 - **Fixing the knob:** use 3 × M1.6 screws, about 6 mm long, put in from the back into the
   knob's own nuts.
+- **Don't over-tighten:** if the screws are too tight, the knob's push button becomes stiff
+  or stops clicking. Do them up gently, then press the knob. If the push feels stiff, back each
+  screw off a little at a time until it presses smoothly. You can also use the screws to set
+  how deep the knob sits.
 - **Fixing the plate:** use 2 × M3.5 plate screws at the standard 84 mm centres, so it fits
   Australian wall boxes and mounting brackets.
 - **Power:** a USB-C cable runs straight out of the back of the knob into the wall cavity,
