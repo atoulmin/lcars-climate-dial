@@ -46,6 +46,22 @@ esphome:
           api->subscribe_home_assistant_state(e, std::string("supported_features"), Cb([](const std::string &s) {
             id(climate_features) = parse_number<int>(s).value_or(-1);
           }));
+          // Fan speeds for the long-press page
+          api->subscribe_home_assistant_state(e, std::string("fan_modes"), Cb([](const std::string &s) {
+            // Sent as a Python list: ['auto', 'low', ...]
+            std::vector<std::string> modes;
+            size_t i = 0;
+            while ((i = s.find('\'', i)) != std::string::npos) {
+              size_t j = s.find('\'', i + 1);
+              if (j == std::string::npos) break;
+              modes.push_back(s.substr(i + 1, j - i - 1));
+              i = j + 1;
+            }
+            id(fan_modes) = modes;
+          }));
+          api->subscribe_home_assistant_state(e, std::string("fan_mode"), Cb([](const std::string &s) {
+            id(ha_fan_mode) = s;
+          }));
           if (${temp_range_from_ha}) {
             api->subscribe_home_assistant_state(e, std::string("min_temp"), Cb([](const std::string &s) {
               if (auto t = parse_number<float>(s)) if (*t < id(temp_max)) id(temp_min) = *t;
@@ -238,7 +254,7 @@ sensor:
       - script.execute: { id: knob_step, direction: -1 }
 
 binary_sensor:
-  # Knob push button
+  # Knob push button: a tap (acted on at release) is on/off, holding it opens fan speed
   - platform: gpio
     id: knob_button
     pin:
@@ -248,9 +264,13 @@ binary_sensor:
     filters:
       - delayed_on: 10ms
       - delayed_off: 25ms
-    # Act on press rather than release so it feels instant
+    on_click:
+      min_length: 10ms
+      max_length: 450ms
+      then:
+        - script.execute: knob_press
     on_press:
-      - script.execute: knob_press
+      - script.execute: long_press
 
 script:
   - id: send_temperature
@@ -324,6 +344,30 @@ script:
                       data:
                         entity_id: !lambda return id(subscribed_entity);
                         hvac_mode: !lambda return id(power_mode);
+
+  - id: long_press
+    mode: restart
+    then:
+      - delay: 500ms
+      - if:
+          condition:
+            binary_sensor.is_on: knob_button
+          then:
+            - script.execute: fan_open
+
+  - id: send_fan_mode
+    then:
+      - if:
+          condition:
+            lambda: return id(subscribed_entity).empty() || id(fan_modes).empty();
+          then:
+            - script.stop: send_fan_mode
+      - lambda: id(ha_fan_mode) = id(fan_modes)[id(fan_index)];
+      - homeassistant.action:
+          action: climate.set_fan_mode
+          data:
+            entity_id: !lambda return id(subscribed_entity);
+            fan_mode: !lambda return id(fan_modes)[id(fan_index)];
 
   - id: set_backlight
     parameters:

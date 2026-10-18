@@ -2,7 +2,8 @@
 
 An LCARS-style thermostat dial for Home Assistant, running ESPHome on the **Open Nextion
 ONX2424G013** round knob display. Turn the knob to set the temperature, press it to switch your
-heating or cooling on and off. It works with any Home Assistant `climate` entity.
+heating or cooling on and off, and hold it to change the fan speed. It works with any Home
+Assistant `climate` entity.
 
 > [!IMPORTANT]
 > **Unofficial fan project, for personal and non-commercial use only.**
@@ -23,6 +24,7 @@ Right: the firmware running in the simulator.</sub></p>
   <img src="docs/images/dial-cooling.png" width="150" alt="Cooling">
   <img src="docs/images/dial-adjust.png" width="150" alt="Adjusting">
   <img src="docs/images/dial-heating.png" width="150" alt="Heating">
+  <img src="docs/images/dial-fan.png" width="150" alt="Fan speed">
   <img src="docs/images/dial-off.png" width="150" alt="Off">
   <img src="docs/images/dial-sleep.png" width="150" alt="Sleep screen">
 </p>
@@ -33,6 +35,10 @@ Right: the firmware running in the simulator.</sub></p>
   knob has been still for 0.7 s, so your air con gets one command instead of a beep per click.
   Spin it fast to move in bigger steps.
 - **Press** to turn the climate device on or off.
+- **Hold** the knob for half a second while it's running to open **FAN SPEED**. A segmented
+  LCARS bar shows the climate's own fan speeds (for example auto, low, medium, high). Turn
+  to step through them; the new speed is sent once you stop turning. A press, or 5 seconds
+  untouched, returns to the main screen.
 - **Status at the top**: HEATING or COOLING (inferred from the mode and the temperatures),
   ADJUST while you turn, or AC OFF.
 - **The gauge** fills from blue to orange with the set temperature. A notch marks the room
@@ -153,13 +159,15 @@ The settings at the top of `firmware/lcars-climate-dial.yaml`:
 | `temp_range_from_ha` | `"true"` | Use the climate entity's `min_temp`, `max_temp` and `target_temp_step`. Set to `"false"` to use `temp_min` / `temp_max` / `temp_step` instead |
 | `send_after_ms` | `700` | How long the knob must be still before the temperature is sent |
 | `screen_idle_after` | `45s` | How long until the screen sleeps once the climate is off |
+| `fan_close_after` | `5s` | How long the fan speed page stays open untouched |
 | `sleep_brightness` | `0.3` | Backlight level on the sleep screen |
 | `lcars_font`, `size_*` | Antonio | The font and its sizes; if you own an LCARS-style font, point `lcars_font` at its TTF and adjust the sizes |
 | `setup_ssid` | `LCARS Dial Setup` | Name of the setup hotspot |
 
 **Simulator:** `firmware/sim.yaml` runs the dial in a window on your computer
-(`esphome run sim.yaml`). ↑/↓ turns the knob and Space presses it. `LCARS_DEMO=1` plays a demo,
-and `LCARS_SETUP_DEMO=1` steps through the setup screens.
+(`esphome run sim.yaml`). ↑/↓ turns the knob, Space presses it and F holds it (fan speed).
+`LCARS_DEMO=1` plays a demo, `LCARS_SETUP_DEMO=1` steps through the setup screens and
+`LCARS_FAN_DEMO=1` shows the fan speed page.
 
 ### Files
 

@@ -8,6 +8,8 @@
 #include <cstring>
 #include <algorithm>
 #include <vector>
+#include <string>
+#include <cctype>
 
 namespace lcars_ac {
 
@@ -22,8 +24,11 @@ constexpr int GAUGE_GAP = 4;
 constexpr int GAUGE_BLOCKS = 8;
 static const int GAUGE_SPAN[GAUGE_BLOCKS] = {30, 34, 30, 38, 38, 30, 34, 28};
 
+// Fan speed bar
+constexpr int FAN_BAR_W = 140, FAN_BAR_H = 20, FAN_BAR_GAP = 3;
+
 struct Fonts {
-  const lv_font_t *big, *med, *huge, *label;
+  const lv_font_t *big, *med, *huge, *label, *fan;
 };
 
 enum Action : uint8_t { IDLE, HEATING, COOLING, OTHER };
@@ -37,6 +42,7 @@ struct Input {
   const char *mode = "AUTO";             // shown when idle
   bool adjusting = false;
   bool linked = true;                    // connected to Home Assistant
+  bool fan = false;                      // fan speed page open
 };
 
 // Everything that just fades between its colour and dim with the lights
@@ -63,6 +69,11 @@ struct Ui {
   // Last colours set, so styles are only touched (and redrawn) when they change
   lv_color_t c_num, c_button, c_status, c_underline, c_scan[7];
   lv_obj_t *button, *icon_ring, *icon_bar;
+  // Fan speed page (long press)
+  lv_obj_t *fan_layer = nullptr, *fan_name = nullptr, *fan_bar_box = nullptr, *fan_lo = nullptr, *fan_hi = nullptr;
+  lv_obj_t *fan_cap[2] = {};  // rounded LCARS end caps of the bar
+  std::vector<lv_obj_t *> fan_bars;
+  int fan_shown = -2;
   static constexpr int SCAN = 7;
   lv_obj_t *scan[SCAN];
   float scan_pos = 0, scan_level[SCAN] = {};
@@ -334,6 +345,32 @@ inline void build(lv_obj_t *parent, const Fonts &f) {
   lv_obj_set_style_bg_color(ui.scanline, lv_color_hex(PEACH), 0);
   lv_obj_add_flag(ui.scanline, LV_OBJ_FLAG_HIDDEN);
 
+  // Fan speed page: covers the inside of the inner ring while it's open
+  ui.fan_layer = plain(parent);
+  lv_obj_set_size(ui.fan_layer, 172, 172);
+  lv_obj_center(ui.fan_layer);
+  lv_obj_set_style_radius(ui.fan_layer, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_opa(ui.fan_layer, LV_OPA_COVER, 0);
+  lv_obj_set_style_bg_color(ui.fan_layer, lv_color_black(), 0);
+  ui.fan_name = text(ui.fan_layer, f.fan, PEACH, 0, -26, "", false);
+  // One LCARS bar: rounded end caps, a segment per fan speed in between
+  ui.fan_bar_box = plain(ui.fan_layer);
+  lv_obj_set_size(ui.fan_bar_box, FAN_BAR_W, FAN_BAR_H);
+  lv_obj_align(ui.fan_bar_box, LV_ALIGN_CENTER, 0, 16);
+  for (int k = 0; k < 2; k++) {
+    lv_obj_t *c = plain(ui.fan_bar_box);
+    lv_obj_set_size(c, FAN_BAR_H, FAN_BAR_H);
+    lv_obj_set_pos(c, k ? FAN_BAR_W - FAN_BAR_H : 0, 0);
+    lv_obj_set_style_radius(c, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+    ui.fan_cap[k] = c;
+  }
+  ui.fan_lo = text(ui.fan_layer, f.label, LILAC, -44, 38, "", false);
+  ui.fan_hi = text(ui.fan_layer, f.label, LILAC, 44, 38, "", false);
+  lv_obj_t *hint = text(ui.fan_layer, f.label, 0x7766AA, 0, 60, "TURN TO ADJUST", false);
+  lv_obj_set_style_text_letter_space(hint, 1, 0);
+  lv_obj_add_flag(ui.fan_layer, LV_OBJ_FLAG_HIDDEN);
+
   // Sleep screen: just the room temperature, large, on black. Drawn over everything.
   ui.sleep_layer = plain(parent);
   lv_obj_set_size(ui.sleep_layer, 240, 240);
@@ -370,6 +407,64 @@ inline void set_sleep(bool asleep) {
 
 // Call on knob press so the status underline flashes
 inline void flash() { ui.pulse = 1.0f; }
+
+// "lowMedium" -> "LOW MEDIUM", "fan_only" -> "FAN ONLY"
+inline std::string fan_label(const std::string &m) {
+  std::string out;
+  for (size_t i = 0; i < m.size(); i++) {
+    char c = m[i];
+    if (c == '_' || c == '-') c = ' ';
+    else if (i && isupper((unsigned char) c) && islower((unsigned char) m[i - 1])) out += ' ';
+    out += (char) toupper((unsigned char) c);
+  }
+  return out;
+}
+
+// Show or hide the fan speed page. Bars rise left to right, lit up to the current speed.
+inline void set_fan(bool active, int index, const std::vector<std::string> &modes) {
+  if (!ui.fan_layer) return;
+  if (!active) {
+    lv_obj_add_flag(ui.fan_layer, LV_OBJ_FLAG_HIDDEN);
+    ui.fan_shown = -2;
+    return;
+  }
+  int n = (int) modes.size();
+  if ((int) ui.fan_bars.size() != n) {
+    for (auto *b : ui.fan_bars) lv_obj_delete(b);
+    ui.fan_bars.clear();
+    // Segments fill the span between the centres of the end caps, so the caps round off
+    // the first and last ones
+    const int r = FAN_BAR_H / 2, span = FAN_BAR_W - 2 * r;
+    for (int i = 0; i < n; i++) {
+      int x0 = r + span * i / n + (i ? FAN_BAR_GAP / 2 : 0);
+      int x1 = r + span * (i + 1) / n - (i < n - 1 ? (FAN_BAR_GAP + 1) / 2 : 0);
+      lv_obj_t *b = plain(ui.fan_bar_box);
+      lv_obj_set_size(b, x1 - x0, FAN_BAR_H);
+      lv_obj_set_pos(b, x0, 0);
+      lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+      ui.fan_bars.push_back(b);
+    }
+    if (n) {
+      lv_label_set_text(ui.fan_lo, fan_label(modes.front()).c_str());
+      lv_label_set_text(ui.fan_hi, fan_label(modes.back()).c_str());
+    }
+    ui.fan_shown = -2;
+  }
+  lv_obj_remove_flag(ui.fan_layer, LV_OBJ_FLAG_HIDDEN);
+  if (index == ui.fan_shown) return;
+  ui.fan_shown = index;
+  // Lit up to the current speed in orange, the current one brighter, the rest unlit
+  auto colour = [&](int i) {
+    return lv_color_hex(i > index ? DIM : i == index ? PEACH : ORANGE);
+  };
+  for (int i = 0; i < n; i++) lv_obj_set_style_bg_color(ui.fan_bars[i], colour(i), 0);
+  if (n) {
+    lv_obj_set_style_bg_color(ui.fan_cap[0], colour(0), 0);
+    lv_obj_set_style_bg_color(ui.fan_cap[1], colour(n - 1), 0);
+  }
+  std::string name = index >= 0 && index < n ? fan_label(modes[index]) : "--";
+  lv_label_set_text(ui.fan_name, name.c_str());
+}
 
 // Advance the animation one frame (~33 ms)
 inline void tick(const Input &in) {
@@ -585,6 +680,9 @@ inline void tick(const Input &in) {
   } else if (!in.linked) {
     status = "NO LINK";
     color = (ui.frame / 15) % 2 ? RED : 0x661111;
+  } else if (in.fan) {
+    status = "FAN SPEED";
+    color = ORANGE;
   } else if (in.adjusting) {
     status = "ADJUST";
     color = GOLD;

@@ -1,4 +1,4 @@
-# Desktop preview of the LCARS air con dial (SDL window). Up/Down = knob, Space = press.
+# Desktop preview of the LCARS air con dial (SDL window). Up/Down = knob, Space = press, F = hold (fan speed).
 substitutions:
   # LCARS-style font: a TTF file or gfonts://Family@weight
   lcars_font: "gfonts://Antonio@700"
@@ -7,6 +7,7 @@ substitutions:
   size_huge: "130"
   size_setup: "16"
   size_setup_small: "13"
+  size_fan: "30"
   size_label: "12"
   on_mode: heat_cool
   setup_ssid: LCARS Dial Setup
@@ -15,6 +16,8 @@ substitutions:
   temp_step: "0.5"
   send_after_ms: "700"
   screen_idle_after: 3s
+  # Fan speed page (hold the knob) closes after this long untouched
+  fan_close_after: 5s
   sleep_brightness: "0.3"
 
 esphome:
@@ -28,6 +31,8 @@ esphome:
       - lambda: |-
           id(ha_linked) = true;
           id(cur_temp) = 24.0f;
+          id(fan_modes) = {"auto", "night", "low", "lowMedium", "medium", "mediumHigh", "high"};
+          id(ha_fan_mode) = "medium";
       - script.execute: build_ui
       - if:
           condition:
@@ -42,6 +47,26 @@ esphome:
             - lambda: lcars_setup::show(lcars_setup::NOT_FOUND, "192.168.0.57", "climate.lounge_room");
             - delay: 2s
             - lambda: lcars_setup::show(lcars_setup::NONE, "192.168.0.57", "climate.lounge_room");
+      - if:
+          condition:
+            lambda: return getenv("LCARS_FAN_DEMO") != nullptr;
+          then:
+            - delay: 2s
+            - script.execute: knob_press
+            - delay: 2.5s
+            - script.execute: fan_open
+            - delay: 1.5s
+            - repeat:
+                count: 2
+                then:
+                  - script.execute: { id: knob_step, direction: 1 }
+                  - delay: 400ms
+            - delay: 1s
+            - repeat:
+                count: 4
+                then:
+                  - script.execute: { id: knob_step, direction: -1 }
+                  - delay: 400ms
       - if:
           condition:
             lambda: return getenv("LCARS_DEMO") != nullptr;
@@ -78,6 +103,11 @@ binary_sensor:
     on_press:
       - script.execute: { id: knob_step, direction: -1 }
   - platform: sdl
+    id: key_f
+    key: SDLK_f
+    on_press:
+      - script.execute: fan_open
+  - platform: sdl
     id: key_space
     key: SDLK_SPACE
     on_press:
@@ -94,6 +124,12 @@ script:
       - logger.log:
           format: "-> HA climate %s"
           args: ['id(ac_on) ? "set_hvac_mode ${on_mode}" : "turn_off"']
+  - id: send_fan_mode
+    then:
+      - lambda: id(ha_fan_mode) = id(fan_modes)[id(fan_index)];
+      - logger.log:
+          format: "-> HA climate.set_fan_mode %s"
+          args: ['id(fan_modes)[id(fan_index)].c_str()']
   - id: set_backlight
     parameters:
       level: float

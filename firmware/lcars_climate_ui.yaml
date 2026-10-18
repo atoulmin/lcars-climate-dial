@@ -1,8 +1,9 @@
 # Shared LCARS air conditioner dial logic: fonts, LVGL, knob handling and the animation tick.
-# The including file must provide: display id "lcd", scripts send_temperature and
-# send_power, the substitutions temp_min, temp_max, temp_step, on_mode, setup_ssid,
-# send_after_ms, screen_idle_after and sleep_brightness, and call ha_mode / ha_set_temp /
-# ha_cur_temp with Home Assistant state.
+# The including file must provide: display id "lcd"; scripts send_temperature, send_power
+# and send_fan_mode; the substitutions temp_min, temp_max, temp_step, on_mode, setup_ssid,
+# send_after_ms, screen_idle_after, sleep_brightness, fan_close_after, lcars_font and
+# size_*; it fills fan_modes / ha_fan_mode and calls ha_mode / ha_set_temp / ha_cur_temp
+# with Home Assistant state, and calls knob_step, knob_press and fan_open from the knob.
 
 globals:
   - id: set_temp
@@ -61,6 +62,23 @@ globals:
   - id: resync_pending
     type: bool
     initial_value: "false"
+  # Fan speed page (long press): the climate's fan modes, its current one, and our pick
+  - id: fan_modes
+    type: std::vector<std::string>
+  - id: ha_fan_mode
+    type: std::string
+  - id: fan_active
+    type: bool
+    initial_value: "false"
+  - id: fan_index
+    type: int
+    initial_value: "0"
+  - id: fan_last_turn
+    type: uint32_t
+    initial_value: "0"
+  - id: fan_pending
+    type: bool
+    initial_value: "false"
 
 # LCARS GTJ3 (freeware from gtjlcars.de; keep the file unmodified, not for sale)
 font:
@@ -93,6 +111,13 @@ font:
     bpp: 4
     glyphs: [" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"]
 
+  # Fan speed name
+  - file: ${lcars_font}
+    id: f_fan
+    size: ${size_fan}
+    bpp: 4
+    glyphs: " -0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
   # Curved band labels (black on the inner ring)
   - file: ${lcars_font}
     id: f_label
@@ -102,6 +127,8 @@ font:
 lvgl:
   displays:
     - lcd
+  # Measured: a 25% internal-RAM buffer is no faster here (arc drawing dominates), and
+  # the start-up build is quicker with the full-screen buffer
   buffer_size: 100%
   log_level: WARN
   pages:
@@ -129,6 +156,9 @@ lvgl:
             text_font: f_setup
         - label:
             hidden: true
+            text_font: f_fan
+        - label:
+            hidden: true
             text_font: f_setup_small
         - qrcode:
             hidden: true
@@ -139,7 +169,8 @@ script:
   - id: build_ui
     then:
       - lambda: |-
-          lcars_ac::Fonts f{id(f_big).get_lv_font(), id(f_med).get_lv_font(), id(f_huge).get_lv_font(), id(f_label).get_lv_font()};
+          lcars_ac::Fonts f{id(f_big).get_lv_font(), id(f_med).get_lv_font(), id(f_huge).get_lv_font(), id(f_label).get_lv_font(),
+                            id(f_fan).get_lv_font()};
           lcars_ac::build(lv_screen_active(), f);
           lcars_setup::build(id(f_setup).get_lv_font(), id(f_setup_small).get_lv_font(), "${setup_ssid}");
           id(ui_ready) = true;
@@ -154,6 +185,20 @@ script:
           condition:
             lambda: return lcars_setup::active();
           then:
+            - script.stop: knob_step
+      # Fan page open: turning steps through the fan speeds instead
+      - if:
+          condition:
+            lambda: return id(fan_active);
+          then:
+            - lambda: |-
+                int n = id(fan_modes).size();
+                id(fan_index) = std::max(0, std::min(n - 1, id(fan_index) + direction));
+                lcars_ac::set_fan(true, id(fan_index), id(fan_modes));
+                id(fan_last_turn) = millis();
+                id(fan_pending) = true;
+            - script.execute: fan_timeout
+            - script.execute: wake_screen
             - script.stop: knob_step
       # Asleep, the first turn just wakes the display
       - if:
@@ -186,6 +231,13 @@ script:
           condition:
             lambda: return lcars_setup::active();
           then:
+            - script.stop: knob_press
+      # Fan page open: a press just closes it
+      - if:
+          condition:
+            lambda: return id(fan_active);
+          then:
+            - script.execute: fan_close
             - script.stop: knob_press
       - lambda: |-
           id(ac_on) = !id(ac_on);
@@ -230,6 +282,46 @@ script:
     then:
       - lambda: id(cur_temp) = t;
 
+  # Long press: open the fan speed page, only while the climate is running and has fan modes
+  - id: fan_open
+    then:
+      - if:
+          condition:
+            lambda: return lcars_setup::active() || id(asleep) || !id(ac_on) || id(fan_modes).empty() || id(fan_active);
+          then:
+            - script.execute: wake_screen
+          else:
+            - lambda: |-
+                auto &m = id(fan_modes);
+                auto it = std::find(m.begin(), m.end(), id(ha_fan_mode));
+                id(fan_index) = it == m.end() ? 0 : it - m.begin();
+                id(fan_active) = true;
+                id(fan_pending) = false;
+                lcars_ac::set_fan(true, id(fan_index), m);
+                lcars_ac::flash();
+            - script.execute: fan_timeout
+            - script.execute: wake_screen
+
+  # Back to the main screen once the knob has been left alone
+  - id: fan_timeout
+    mode: restart
+    then:
+      - delay: ${fan_close_after}
+      - script.execute: fan_close
+
+  - id: fan_close
+    then:
+      - script.stop: fan_timeout
+      - if:
+          condition:
+            lambda: return id(fan_pending);
+          then:
+            - lambda: id(fan_pending) = false;
+            - script.execute: send_fan_mode
+      - lambda: |-
+          id(fan_active) = false;
+          lcars_ac::set_fan(false, 0, id(fan_modes));
+
   # Full display on any interaction. It stays awake while the air con is on; once
   # it's off and the knob has been left alone, it sleeps showing just the room temperature.
   - id: wake_screen
@@ -253,6 +345,11 @@ script:
   - id: sleep_now
     then:
       - script.stop: wake_screen
+      - if:
+          condition:
+            lambda: return id(fan_active);
+          then:
+            - script.execute: fan_close
       - lambda: |-
           id(asleep) = true;
           if (id(ui_ready)) lcars_ac::set_sleep(true);
@@ -285,6 +382,10 @@ interval:
             }
             if (!std::isnan(id(ha_last_set))) id(set_temp) = id(ha_last_set);
           }
+          if (id(fan_pending) && millis() - id(fan_last_turn) > ${send_after_ms}) {
+            id(fan_pending) = false;
+            id(send_fan_mode).execute();
+          }
           lcars_ac::Input in;
           in.set_temp = id(set_temp);
           in.cur_temp = id(cur_temp);
@@ -301,5 +402,6 @@ interval:
           in.mode = m == "dry" ? "DRY" : m == "fan_only" ? "FAN" : (m == "heat_cool" || m == "auto") ? "HOLDING" : "AUTO";
           in.adjusting = id(last_turn_ms) != 0 && millis() - id(last_turn_ms) < 1200;
           in.linked = id(ha_linked);
+          in.fan = id(fan_active);
           lcars_ac::tick(in);
 
