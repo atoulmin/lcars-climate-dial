@@ -1,0 +1,124 @@
+# Desktop preview of the LCARS air con dial (SDL window). Up/Down = knob, Space = press.
+substitutions:
+  # LCARS-style font: a TTF file or gfonts://Family@weight
+  lcars_font: "gfonts://Antonio@700"
+  size_big: "50"
+  size_med: "17"
+  size_huge: "130"
+  size_setup: "16"
+  size_setup_small: "13"
+  size_label: "12"
+  on_mode: heat_cool
+  setup_ssid: LCARS Dial Setup
+  temp_min: "18"
+  temp_max: "32"
+  temp_step: "0.5"
+  send_after_ms: "700"
+  screen_idle_after: 3s
+  sleep_brightness: "0.3"
+
+esphome:
+  name: lcars-aircon-sim
+  includes:
+    - lcars_climate.h
+    - lcars_setup.h
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(ha_linked) = true;
+          id(cur_temp) = 24.0f;
+      - script.execute: build_ui
+      - if:
+          condition:
+            lambda: return getenv("LCARS_SETUP_DEMO") != nullptr;
+          then:
+            - lambda: lcars_setup::show(lcars_setup::WIFI, "", "");
+            - delay: 2s
+            - lambda: lcars_setup::show(lcars_setup::HOME_ASSISTANT, "192.168.0.57", "");
+            - delay: 2s
+            - lambda: lcars_setup::show(lcars_setup::CLIMATE, "192.168.0.57", "");
+            - delay: 2s
+            - lambda: lcars_setup::show(lcars_setup::NOT_FOUND, "192.168.0.57", "climate.lounge_room");
+            - delay: 2s
+            - lambda: lcars_setup::show(lcars_setup::NONE, "192.168.0.57", "climate.lounge_room");
+      - if:
+          condition:
+            lambda: return getenv("LCARS_DEMO") != nullptr;
+          then:
+            - script.execute: demo
+
+host:
+  mac_address: "06:35:69:ab:f6:79"
+
+logger:
+  level: INFO
+
+packages:
+  ui: !include lcars_climate_ui.yaml
+
+display:
+  - platform: sdl
+    id: lcd
+    auto_clear_enabled: false
+    update_interval: never
+    dimensions:
+      width: 240
+      height: 240
+
+binary_sensor:
+  - platform: sdl
+    id: key_up
+    key: SDLK_UP
+    on_press:
+      - script.execute: { id: knob_step, direction: 1 }
+  - platform: sdl
+    id: key_down
+    key: SDLK_DOWN
+    on_press:
+      - script.execute: { id: knob_step, direction: -1 }
+  - platform: sdl
+    id: key_space
+    key: SDLK_SPACE
+    on_press:
+      - script.execute: knob_press
+
+script:
+  - id: send_temperature
+    then:
+      - logger.log:
+          format: "-> HA climate.set_temperature %.1f"
+          args: [id(set_temp)]
+  - id: send_power
+    then:
+      - logger.log:
+          format: "-> HA climate %s"
+          args: ['id(ac_on) ? "set_hvac_mode ${on_mode}" : "turn_off"']
+  - id: set_backlight
+    parameters:
+      level: float
+    then:
+      - logger.log:
+          format: "backlight %.0f%%"
+          args: [level * 100]
+  # Scripted run for screenshots (LCARS_DEMO=1): t=3 on, t=5 up, t=9 down, t=12 off
+  - id: demo
+    then:
+      - delay: 3s
+      - script.execute: knob_press
+      - delay: 2s
+      - repeat:
+          count: 12
+          then:
+            - script.execute: { id: knob_step, direction: 1 }
+            - delay: 80ms
+      - delay: 3s
+      - repeat:
+          count: 20
+          then:
+            - script.execute: { id: knob_step, direction: -1 }
+            - delay: 70ms
+      - delay: 1.6s
+      - script.execute: knob_press
+      - delay: 2s
+      - script.execute: knob_press

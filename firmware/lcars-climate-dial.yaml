@@ -1,0 +1,80 @@
+# LCARS Climate Dial: an LCARS-style thermostat dial for Home Assistant on the
+# Open Nextion ONX2424G013 round knob. Turn = set temperature (clockwise warmer),
+# press = on / off. No Wi-Fi, keys or climate device are built in.
+#
+# Unofficial fan project for personal, non-commercial use only. LCARS, Star Trek and
+# related marks are the property of Paramount Global / CBS Studios; this project is not
+# affiliated with or endorsed by them. See README.md.
+#
+# Setting it up (the dial's screen walks through it):
+#  1. Power it on. With no Wi-Fi it opens an "LCARS Dial Setup" hotspot and shows a QR
+#     code. Scan it (or join the hotspot) and pick your Wi-Fi on the page that opens.
+#     (Or set Wi-Fi over USB at https://web.esphome.io.)
+#  2. On Wi-Fi it shows "ADD ME IN HOME ASSISTANT". Add it from Settings > Devices &
+#     services > Discovered; Home Assistant creates and installs the encryption key itself.
+#  3. On the dial's device page in Home Assistant:
+#     a. ESPHome card > Configure: tick "Allow the device to perform Home Assistant
+#        actions" and submit. Without this the dial can't control anything.
+#     b. Configuration > Climate entity: type the entity ID, e.g. climate.living_room,
+#        and PRESS ENTER to save it. The dial restarts and links to it.
+#     "Power on mode" picks the mode a press turns it on in.
+#
+# Flash over USB:  esphome run lcars-climate-dial.yaml --device /dev/ttyACM0
+substitutions:
+  # Font: Antonio (free, SIL Open Font Licence). To use another LCARS-style font, point
+  # lcars_font at its TTF file (or gfonts://Family@weight) and adjust the sizes.
+  lcars_font: "gfonts://Antonio@700"
+  size_big: "50"
+  size_med: "17"
+  size_huge: "130"
+  size_setup: "16"
+  size_setup_small: "13"
+  size_label: "12"
+  name: lcars-dial
+  friendly_name: LCARS Dial
+  climate_entity: ""
+  power_on_mode: Last used
+  # Range and step come from the climate entity; these are fallbacks
+  temp_range_from_ha: "true"
+  temp_min: "16"
+  temp_max: "30"
+  temp_step: "0.5"
+  on_mode: ""
+  send_after_ms: "700"
+  screen_idle_after: 45s
+  sleep_brightness: "0.3"
+  setup_ssid: LCARS Dial Setup
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  # Each dial gets its own network name (lcars-dial-1a2b3c)
+  name_add_mac_suffix: true
+  # Keep its build apart from the other builds
+  build_path: build/lcars-climate-dial
+  project:
+    name: atoulmin.lcars-climate-dial
+    version: "1.0.0"
+
+# No key: Home Assistant generates one and installs it when the dial is added
+api:
+  encryption: {}
+  # The climate entity is subscribed to in code (lcars_climate_device.yaml)
+  homeassistant_states: true
+
+ota:
+  - platform: esphome
+
+# With no Wi-Fi saved the hotspot starts straight away; if a saved network is
+# unreachable for a minute it comes back
+wifi:
+  ap:
+    ssid: ${setup_ssid}
+
+captive_portal:
+
+# Wi-Fi setup over USB from https://web.esphome.io
+improv_serial:
+
+packages:
+  device: !include lcars_climate_device.yaml

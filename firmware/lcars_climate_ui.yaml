@@ -1,0 +1,277 @@
+# Shared LCARS air conditioner dial logic: fonts, LVGL, knob handling and the animation tick.
+# The including file must provide: display id "lcd", scripts send_temperature and
+# send_power, the substitutions temp_min, temp_max, temp_step, on_mode, setup_ssid,
+# send_after_ms, screen_idle_after and sleep_brightness, and call ha_mode / ha_set_temp /
+# ha_cur_temp with Home Assistant state.
+
+globals:
+  - id: set_temp
+    type: float
+    initial_value: "22"
+  - id: cur_temp
+    type: float
+    initial_value: "NAN"
+  - id: ac_on
+    type: bool
+    initial_value: "false"
+  - id: hvac_mode
+    type: std::string
+    initial_value: '"off"'
+  - id: ha_linked
+    type: bool
+    initial_value: "false"
+  - id: last_turn_ms
+    type: uint32_t
+    initial_value: "0"
+  - id: local_change_ms
+    type: uint32_t
+    initial_value: "0"
+  - id: pending_send
+    type: bool
+    initial_value: "false"
+  - id: ui_ready
+    type: bool
+    initial_value: "false"
+  - id: asleep
+    type: bool
+    initial_value: "false"
+  # Temperature range and step; Home Assistant's climate attributes can override them
+  - id: temp_min
+    type: float
+    initial_value: "${temp_min}"
+  - id: temp_max
+    type: float
+    initial_value: "${temp_max}"
+  - id: temp_step
+    type: float
+    initial_value: "${temp_step}"
+  # HVAC mode for turning on ("" = the climate's own last mode) and the last mode seen on
+  - id: on_mode
+    type: std::string
+    initial_value: '"${on_mode}"'
+  - id: last_on_mode
+    type: std::string
+    initial_value: '"heat_cool"'
+
+# LCARS GTJ3 (freeware from gtjlcars.de; keep the file unmodified, not for sale)
+font:
+  - file: ${lcars_font}
+    id: f_big
+    size: ${size_big}
+    bpp: 4
+    glyphs: "0123456789.-OFN"
+  - file: ${lcars_font}
+    id: f_med
+    size: ${size_med}
+    bpp: 4
+    glyphs: " -.°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  # Sleep screen room temperature
+  - file: ${lcars_font}
+    id: f_huge
+    size: ${size_huge}
+    bpp: 4
+    glyphs: "-0123456789"
+
+  # Setup screens (all of ASCII)
+  - file: ${lcars_font}
+    id: f_setup
+    size: ${size_setup}
+    bpp: 4
+    glyphs: [" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"]
+  - file: ${lcars_font}
+    id: f_setup_small
+    size: ${size_setup_small}
+    bpp: 4
+    glyphs: [" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~"]
+
+  # Curved band labels (black on the inner ring)
+  - file: ${lcars_font}
+    id: f_label
+    size: ${size_label}
+    bpp: 4
+    glyphs: " ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+lvgl:
+  displays:
+    - lcd
+  buffer_size: 100%
+  log_level: WARN
+  pages:
+    - id: main_page
+      bg_color: 0x000000
+      # Hidden placeholders: ESPHome only compiles the LVGL widgets and fonts the
+      # YAML uses, and the real UI is built in lcars_climate.h
+      widgets:
+        - arc:
+            hidden: true
+        - label:
+            hidden: true
+            text_font: f_big
+        - label:
+            hidden: true
+            text_font: f_med
+        - label:
+            hidden: true
+            text_font: f_label
+        - label:
+            hidden: true
+            text_font: f_huge
+        - label:
+            hidden: true
+            text_font: f_setup
+        - label:
+            hidden: true
+            text_font: f_setup_small
+        - qrcode:
+            hidden: true
+            size: 10
+            text: "x"
+
+script:
+  - id: build_ui
+    then:
+      - lambda: |-
+          lcars_ac::Fonts f{id(f_big).get_lv_font(), id(f_med).get_lv_font(), id(f_huge).get_lv_font(), id(f_label).get_lv_font()};
+          lcars_ac::build(lv_screen_active(), f);
+          lcars_setup::build(id(f_setup).get_lv_font(), id(f_setup_small).get_lv_font(), "${setup_ssid}");
+          id(ui_ready) = true;
+
+  # One knob detent: clockwise warmer, anticlockwise cooler
+  - id: knob_step
+    parameters:
+      direction: int
+    then:
+      # Nothing to control while a setup screen is up
+      - if:
+          condition:
+            lambda: return lcars_setup::active();
+          then:
+            - script.stop: knob_step
+      # Asleep, the first turn just wakes the display
+      - if:
+          condition:
+            lambda: return id(asleep);
+          then:
+            - script.execute: wake_screen
+          else:
+            - lambda: |-
+                uint32_t now = millis();
+                float step = id(temp_step);
+                if (now - id(last_turn_ms) < 60) step *= 2;  // spin fast, move further
+                id(set_temp) += direction * step;
+                // Stay on the step grid from the minimum
+                id(set_temp) = id(temp_min) + roundf((id(set_temp) - id(temp_min)) / id(temp_step)) * id(temp_step);
+                if (id(set_temp) < id(temp_min)) id(set_temp) = id(temp_min);
+                if (id(set_temp) > id(temp_max)) id(set_temp) = id(temp_max);
+                id(last_turn_ms) = now;
+                id(local_change_ms) = now;
+                id(pending_send) = true;
+            - script.execute: wake_screen
+
+  # Knob press: air con on (in auto mode) or off. Off goes straight to the sleep
+  # screen; on from sleep plays the start-up build.
+  - id: knob_press
+    then:
+      # Nothing to control while a setup screen is up
+      - if:
+          condition:
+            lambda: return lcars_setup::active();
+          then:
+            - script.stop: knob_press
+      - lambda: |-
+          id(ac_on) = !id(ac_on);
+          id(hvac_mode) = id(ac_on) ? (id(on_mode).empty() ? id(last_on_mode) : id(on_mode)) : "off";
+          id(local_change_ms) = millis();
+          lcars_ac::flash();
+      - script.execute: send_power
+      - if:
+          condition:
+            lambda: return id(ac_on);
+          then:
+            - script.execute: wake_screen
+          else:
+            - script.execute: sleep_now
+
+  # Home Assistant state. Ignored briefly after a local change so the dial doesn't
+  # jump back while the air con catches up.
+  - id: ha_mode
+    parameters:
+      mode: std::string
+    then:
+      - lambda: |-
+          if (millis() - id(local_change_ms) < 4000) return;
+          id(hvac_mode) = mode;
+          id(ac_on) = mode != "off" && mode != "unavailable" && mode != "unknown";
+          if (id(ac_on)) id(last_on_mode) = mode;
+  - id: ha_set_temp
+    parameters:
+      t: float
+    then:
+      - lambda: |-
+          if (std::isnan(t) || millis() - id(local_change_ms) < 4000) return;
+          id(set_temp) = t;
+  - id: ha_cur_temp
+    parameters:
+      t: float
+    then:
+      - lambda: id(cur_temp) = t;
+
+  # Full display on any interaction. It stays awake while the air con is on; once
+  # it's off and the knob has been left alone, it sleeps showing just the room temperature.
+  - id: wake_screen
+    mode: restart
+    then:
+      - lambda: |-
+          bool was_asleep = id(asleep);
+          id(asleep) = false;
+          if (id(ui_ready)) {
+            lcars_ac::set_sleep(false);
+            // Woken by the air con coming on: build the display up
+            if (was_asleep && id(ac_on)) lcars_ac::boot();
+          }
+      - script.execute: { id: set_backlight, level: 1.0 }
+      - delay: ${screen_idle_after}
+      - wait_until:
+          condition:
+            lambda: return !id(ac_on);
+      - script.execute: sleep_now
+
+  - id: sleep_now
+    then:
+      - script.stop: wake_screen
+      - lambda: |-
+          id(asleep) = true;
+          if (id(ui_ready)) lcars_ac::set_sleep(true);
+      # Setup screens stay bright so they can be read
+      - script.execute:
+          id: set_backlight
+          level: !lambda "return lcars_setup::active() ? 1.0f : ${sleep_brightness};"
+
+interval:
+  - interval: 33ms
+    then:
+      - lambda: |-
+          if (!id(ui_ready)) return;
+          // Send the set temperature once the knob has rested, so the air con
+          // gets one command rather than a beep per click
+          if (id(pending_send) && millis() - id(last_turn_ms) > ${send_after_ms}) {
+            id(pending_send) = false;
+            id(send_temperature).execute();
+          }
+          lcars_ac::Input in;
+          in.set_temp = id(set_temp);
+          in.cur_temp = id(cur_temp);
+          in.min_temp = id(temp_min);
+          in.max_temp = id(temp_max);
+          in.on = id(ac_on);
+          const std::string &m = id(hvac_mode);
+          // The unit doesn't report what it's doing, so infer it from the mode and temperatures
+          float diff = std::isnan(id(cur_temp)) ? 0 : id(set_temp) - id(cur_temp);
+          if (m == "heat") in.action = lcars_ac::HEATING;
+          else if (m == "cool") in.action = lcars_ac::COOLING;
+          else if (m == "heat_cool" || m == "auto") in.action = diff > 0.5f ? lcars_ac::HEATING : diff < -0.5f ? lcars_ac::COOLING : lcars_ac::IDLE;
+          else in.action = lcars_ac::OTHER;
+          in.mode = m == "dry" ? "DRY" : m == "fan_only" ? "FAN" : (m == "heat_cool" || m == "auto") ? "HOLDING" : "AUTO";
+          in.adjusting = id(last_turn_ms) != 0 && millis() - id(last_turn_ms) < 1200;
+          in.linked = id(ha_linked);
+          lcars_ac::tick(in);
+
