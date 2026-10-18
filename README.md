@@ -12,7 +12,12 @@ heating or cooling on and off. It works with any Home Assistant `climate` entity
 > from scratch in code, and the text uses the free [Antonio](https://fonts.google.com/specimen/Antonio)
 > font. Please don't sell it or anything made with it. See [Trademarks](#trademarks).
 
-<p align="center"><img src="docs/images/demo.gif" width="280" alt="The dial turning on, adjusting and going to sleep"></p>
+<p align="center">
+  <img src="docs/images/concept-render.jpg" width="230" alt="Concept render of the dial on a wall plate">
+  <img src="docs/images/demo.gif" width="280" alt="The dial turning on, adjusting and going to sleep">
+</p>
+<p align="center"><sub>Left: concept render, AI-generated with Grok. It's not a photo of the actual build.
+Right: the firmware running in the simulator.</sub></p>
 
 <p align="center">
   <img src="docs/images/dial-cooling.png" width="150" alt="Cooling">
