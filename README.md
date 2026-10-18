@@ -12,6 +12,8 @@ Assistant `climate` entity.
 > sponsored by Paramount or CBS. It contains no official artwork or fonts: the look is drawn
 > from scratch in code, and the text uses the free [Antonio](https://fonts.google.com/specimen/Antonio)
 > font. Please don't sell it or anything made with it. See [Trademarks](#trademarks).
+> Use at your own risk, and follow the manufacturer's recommendations for the device. See
+> [Disclaimer](#disclaimer).
 
 <p align="center">
   <img src="docs/images/concept-render.jpg" width="230" alt="Concept render of the dial on a wall plate">
@@ -189,6 +191,31 @@ Inc.** This is an unofficial, non-commercial fan project made for personal use. 
 affiliated with, endorsed by or sponsored by Paramount Global, CBS Studios or any of their
 affiliates. No official artwork, sounds or fonts are included. If you are a rights holder and
 have a concern, please open an issue.
+
+## Disclaimer
+
+This is a hobby project, shared in the hope it's useful. **Use it at your own risk.** It is
+provided "as is", without warranty of any kind (see the licence), and the author accepts no
+liability for any damage, injury, data loss or other problems arising from building or using it.
+
+- **Manufacturer's recommendations:** follow Open Nextion's (ITEAD's) documentation and
+  recommendations for the ONX2424G013, including its power supply, operating conditions and
+  handling. Use a good-quality USB-C power supply within the device's specified ratings.
+- **Warranty:** flashing custom firmware isn't supported by the manufacturer and may affect
+  your warranty. Nextion and ITEAD are trademarks of their respective owners. This project
+  is not affiliated with or endorsed by them.
+- **Electrical safety:** the knob runs on low-voltage USB power only. Any mains wiring, such as
+  installing a USB power outlet or supply in a wall for the wall plate, must be done by a
+  licensed electrician and comply with local regulations (in Australia, AS/NZS 3000).
+  Don't put a plug-pack or other mains supply inside a wall cavity unless it's rated and
+  installed for that.
+- **3D-printed parts:** print in a material suited to where the part will live, and keep it
+  away from heat sources and moisture. Check your prints for strength and fit before relying
+  on them.
+- **Climate control:** the dial sends commands to your climate device through Home Assistant.
+  It isn't a safety device. Don't rely on it where temperature matters for health or safety
+  (for example infants, the elderly, pets or medical needs), and keep your climate
+  equipment's own controls and protections in place.
 
 ## Licence
 
